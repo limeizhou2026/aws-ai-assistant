@@ -1,65 +1,100 @@
 import json
-import boto3
 import os
-from pypdf import PdfReader
+import boto3
+from botocore.exceptions import ClientError
 
-# 初始化 AWS 客户端
+# Initialize AWS clients
 s3_client = boto3.client('s3')
-bedrock_runtime = boto3.client('bedrock-runtime')
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('JobApplications')
+bedrock_runtime = boto3.client('bedrock-runtime', region_name='us-east-1')
+
+# Read the DynamoDB table name configured via environment variables in CDK
+TABLE_NAME = os.environ.get('TABLE_NAME')
+table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
 
 def lambda_handler(event, context):
-    # 1. 从 SQS 消息中提取 S3 的 Bucket 和 Key
-    for record in event['Records']:
-        body = json.loads(record['body'])
-        s3_info = body['Records'][0]['s3']
-        bucket_name = s3_info['bucket']['name']
-        file_key = s3_info['object']['key']
-        
-        # 下载 PDF 到 Lambda 临时内存 (/tmp 空间最大支持 10GB)
-        local_path = f"/tmp/{os.path.basename(file_key)}"
-        s3_client.download_file(bucket_name, file_key, local_path)
-        
-        # 2. 解析 PDF 文本
-        reader = PdfReader(local_path)
-        resume_text = ""
-        for page in reader.pages:
-            resume_text += page.extract_text()
+    print("Received event: ", json.dumps(event))
+    
+    # 1. Parse the S3 event notification triggered via SQS
+    for record in event.get('Records', []):
+        try:
+            # The SQS message body contains the JSON string sent by S3
+            body = json.loads(record['body'])
             
-        # 3. 构建 Agentic Prompt 并调用 AWS Bedrock
-        # 面试官重点看这里：如何构建系统级 Prompt 促使 LLM 像 HR 一样思考
-        system_prompt = "你是一位硅谷大厂的资深 Tech Lead 和 HR 专家。请严格对比用户的简历与目标岗位(JD)，找出 3 个致命缺失技能，并重写一封润色后的 Cover Letter。"
-        
-        user_content = f"简历内容:\n{resume_text}\n\n"
-        
-        # 组装 Bedrock (Claude 3.5) 的原生 Payload
-        body_payload = json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 4000,
-            "system": system_prompt,
-            "messages": [
-                {"role": "user", "content": user_content}
-            ],
-            "temperature": 0.5
-        })
-        
-        response = bedrock_runtime.invoke_model(
-            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
-            body=body_payload
-        )
-        
-        # 4. 解析 Bedrock 的返回结果
-        response_body = json.loads(response.get('body').read())
-        ai_analysis = response_body['content'][0]['text']
-        
-        # 5. 存入 DynamoDB
-        table.put_item(
-            Item={
-                'application_id': file_key.split('.')[0],
-                'status': 'COMPLETED',
-                'analysis_result': ai_analysis
+            # Handle direct S3 events or S3 events wrapped via SNS/SQS
+            if 'Records' in body:
+                s3_event = body['Records'][0]
+                bucket_name = s3_event['s3']['bucket']['name']
+                object_key = s3_event['s3']['object']['key']
+            else:
+                # If triggered directly from S3 to SQS
+                bucket_name = body['bucket']['name']
+                object_key = body['object']['key']
+                
+            print(f"Processing file: {object_key} from bucket: {bucket_name}")
+            
+            # 2. Retrieve resume content from S3
+            response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+            file_content = response['Body'].read().decode('utf-8', errors='ignore')
+            
+            # 3. Construct the prompt and invoke Amazon Bedrock (Claude 3.5 Sonnet)
+            prompt = f"""
+            You are an expert technical recruiter and AI career coach. 
+            Please analyze the following resume content, evaluate its strengths, weaknesses, 
+            and provide a score out of 100 with actionable feedback.
+
+            Resume Content:
+            {file_content[:4000]}  # Truncate to first 4000 characters to prevent token limit overflow
+
+            Please return a JSON response with the following keys:
+            - "summary": A brief professional summary.
+            - "score": An integer score from 0 to 100.
+            - "strengths": A list of key strengths.
+            - "improvements": A list of actionable suggestions for improvement.
+            """
+            
+            payload = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1000,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
             }
-        )
-        
-    return {'statusCode': 200, 'body': 'Success'}
+            
+            # Invoke Claude 3.5 Sonnet on Amazon Bedrock
+            bedrock_response = bedrock_runtime.invoke_model(
+                modelId='anthropic.claude-3-5-sonnet-20240620-v1:0',
+                contentType='application/json',
+                accept='application/json',
+                body=json.dumps(payload)
+            )
+            
+            result_body = json.loads(bedrock_response['body'].read())
+            ai_text_response = result_body['content'][0]['text']
+            
+            print("AI Analysis Result:", ai_text_response)
+            
+            # 4. Save the analysis result into DynamoDB
+            application_id = object_key.replace('/', '_') # Use the file key as a unique identifier
+            if table:
+                table.put_item(
+                    Item={
+                        'application_id': application_id,
+                        'object_key': object_key,
+                        'status': 'COMPLETED',
+                        'analysis_result': ai_text_response
+                    }
+                )
+                print(f"Successfully saved analysis for {application_id} to DynamoDB.")
+                
+        except Exception as e:
+            print(f"Error processing record: {str(e)}")
+            raise e
+            
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Resume processing pipeline executed successfully!')
+    }
