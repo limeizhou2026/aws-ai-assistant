@@ -39,17 +39,17 @@ export class AiAssistantStack extends cdk.Stack {
     );
 
     // 4. 创建 DynamoDB 存储 AI 分析结果
-    const jobTable = new dynamodb.Table(this, 'JobApplicationsTable', {
-      partitionKey: { name: 'application_id', type: 'dynamodb.AttributeType.STRING' },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // 按量计费，适合学生项目
+   const jobTable = new dynamodb.Table(this, 'JobApplicationsTable', {
+      partitionKey: { name: 'application_id', type: dynamodb.AttributeType.STRING}, 
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
+});
 
     // 5. 创建核心 AI Agent Lambda 函数 (使用 Python 运行环境)
     const agentLambda = new lambda.Function(this, 'AiAgentLambda', {
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'lambda_function.lambda_handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../backend/src')), // 指向你的 Python 代码目录
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../backend/src')), // 指向你的 Python 代码目录
       timeout: cdk.Duration.minutes(10), // AI 思考较慢，给予充足的超时时间
       memorySize: 512, // 512MB 内存足够解析 PDF 并调用 API
       environment: {
