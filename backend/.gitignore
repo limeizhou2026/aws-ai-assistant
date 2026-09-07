@@ -1,0 +1,29 @@
+# 依赖目录
+node_modules/
+.pnp
+.pnp.js
+
+# 测试与本地环境
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Next.js 编译产物
+.next/
+out/
+
+# Python 虚拟环境与缓存
+backend/venv/
+backend/.pytest_cache/
+__pycache__/
+*.pyc
+
+# CDK 编译与缓存
+cdk/cdk.out/
+cdk/.cdk.staging/
+*.js
+*.d.ts
+!cdk/bin/*.ts
+!cdk/lib/*.ts

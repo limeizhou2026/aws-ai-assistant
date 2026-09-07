@@ -1,0 +1,10 @@
+{
+  "Records": [
+    {
+      "messageId": "1952a32e-60b5-4740-a0e0-a75d91d75d7e",
+      "body": "{\"Records\": [{\"s3\": {\"bucket\": {\"name\": \"ai-job-assistant-resumes-test\"}, \"object\": {\"key\": \"resume_sample.pdf\"}}}]}",
+      "eventSource": "aws:sqs",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}
