@@ -70,7 +70,10 @@ export class AiAssistantStack extends cdk.Stack {
     // 8. 赋予 Lambda 调用 Amazon Bedrock 大模型的权限
     agentLambda.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: ['arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0'],
+      resources: [ "arn:aws:bedrock:us-east-1:013644998586:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"],
     }));
 
     // 打印输出，方便前端配置
