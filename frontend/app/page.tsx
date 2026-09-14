@@ -2,6 +2,130 @@
 
 import { useState } from 'react';
 
+type AnalysisResult = {
+  summary: string;
+  score: number;
+  strengths: string[];
+  improvements: string[];
+};
+
+// Bedrock sometimes wraps the JSON in a ```json ... ``` code fence — strip it before parsing.
+function parseAnalysis(raw: string): AnalysisResult | null {
+  try {
+    const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    const parsed = JSON.parse(cleaned);
+    if (
+      typeof parsed.summary === 'string' &&
+      typeof parsed.score === 'number' &&
+      Array.isArray(parsed.strengths) &&
+      Array.isArray(parsed.improvements)
+    ) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function scoreColor(score: number) {
+  if (score >= 80) return { ring: '#34d399', text: 'text-emerald-400', bg: 'bg-emerald-500/10' };
+  if (score >= 60) return { ring: '#fbbf24', text: 'text-amber-400', bg: 'bg-amber-500/10' };
+  return { ring: '#f87171', text: 'text-red-400', bg: 'bg-red-500/10' };
+}
+
+function ScoreGauge({ score }: { score: number }) {
+  const { ring, text } = scoreColor(score);
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - score / 100);
+
+  return (
+    <div className="relative h-28 w-28 shrink-0">
+      <svg viewBox="0 0 100 100" className="h-28 w-28 -rotate-90">
+        <circle cx="50" cy="50" r={radius} stroke="#1e293b" strokeWidth="8" fill="none" />
+        <circle
+          cx="50"
+          cy="50"
+          r={radius}
+          stroke={ring}
+          strokeWidth="8"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className={`text-2xl font-extrabold ${text}`}>{score}</span>
+        <span className="text-[10px] text-slate-500 tracking-wide">/ 100</span>
+      </div>
+    </div>
+  );
+}
+
+function stripCritical(text: string) {
+  const match = text.match(/^\s*CRITICAL:?\s*/i);
+  return { critical: !!match, text: match ? text.slice(match[0].length) : text };
+}
+
+function AnalysisReport({ result }: { result: AnalysisResult }) {
+  const { text: scoreText, bg } = scoreColor(result.score);
+
+  return (
+    <div className="space-y-6">
+      <div className={`flex items-center gap-5 rounded-xl border border-slate-800 p-5 ${bg}`}>
+        <ScoreGauge score={result.score} />
+        <div>
+          <div className={`text-xs font-semibold uppercase tracking-wider ${scoreText}`}>Overall Score</div>
+          <p className="mt-1 text-sm leading-relaxed text-slate-300">{result.summary}</p>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-emerald-400">
+          <span className="flex h-2 w-2 rounded-full bg-emerald-400" />
+          Strengths
+        </h3>
+        <ul className="space-y-2">
+          {result.strengths.map((s, i) => (
+            <li key={i} className="flex gap-2 text-sm leading-relaxed text-slate-300">
+              <span className="mt-0.5 shrink-0 text-emerald-400">✓</span>
+              <span>{s}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-amber-400">
+          <span className="flex h-2 w-2 rounded-full bg-amber-400" />
+          Suggested Improvements
+        </h3>
+        <ul className="space-y-2">
+          {result.improvements.map((raw, i) => {
+            const { critical, text } = stripCritical(raw);
+            return (
+              <li key={i} className="flex gap-2 text-sm leading-relaxed text-slate-300">
+                <span className="mt-0.5 shrink-0 text-amber-400">→</span>
+                <span>
+                  {critical && (
+                    <span className="mr-2 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-400">
+                      Critical
+                    </span>
+                  )}
+                  {text}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -134,13 +258,20 @@ export default function Home() {
 
       {aiResult && (
         <div className="w-full max-w-2xl mt-8 bg-slate-900 border border-emerald-900/30 rounded-2xl p-8 shadow-2xl">
-          <div className="text-emerald-400 font-bold mb-3 flex items-center gap-2">
+          <div className="text-emerald-400 font-bold mb-5 flex items-center gap-2 text-sm uppercase tracking-wide">
             <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            AI Analysis Report Ready (From DynamoDB):
+            AI Analysis Report
           </div>
-          <div className="text-slate-300 whitespace-pre-wrap font-sans leading-relaxed text-sm bg-slate-950 p-4 rounded-xl border border-slate-800">
-            {aiResult}
-          </div>
+          {(() => {
+            const parsed = parseAnalysis(aiResult);
+            return parsed ? (
+              <AnalysisReport result={parsed} />
+            ) : (
+              <div className="text-slate-300 whitespace-pre-wrap font-sans leading-relaxed text-sm bg-slate-950 p-4 rounded-xl border border-slate-800">
+                {aiResult}
+              </div>
+            );
+          })()}
         </div>
       )}
     </main>
