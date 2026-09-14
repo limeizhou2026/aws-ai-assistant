@@ -1,5 +1,6 @@
 import json
 import os
+import base64
 import urllib.parse
 import boto3
 from botocore.exceptions import ClientError
@@ -39,26 +40,13 @@ def lambda_handler(event, context):
             
             # 2. Retrieve resume content from S3
             response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
-            
-            # Handle PDF vs Text file content gracefully
-            if object_key.lower().endswith('.pdf'):
-                # For PDF files, read binary and handle parsing (or fallback message if pypdf is needed)
-                # To ensure robustness, we can read bytes. If you use pypdf, you can parse it here.
-                file_bytes = response['Body'].read()
-                # Simple fallback text representation for binary if pypdf isn't bundled yet
-                file_content = f"[Binary PDF File: {object_key}, Size: {len(file_bytes)} bytes]"
-            else:
-                file_content = response['Body'].read().decode('utf-8', errors='ignore')
-            
-            # 3. Construct the prompt and invoke Amazon Bedrock (Claude 3.5 Sonnet)
-            prompt = f"""
-            You are an expert technical recruiter and AI career coach. 
-            Please analyze the following resume content, evaluate its strengths, weaknesses, 
+
+            instruction_text = f"""
+            You are an expert technical recruiter and AI career coach.
+            Please analyze the attached resume, evaluate its strengths, weaknesses,
             and provide a score out of 100 with actionable feedback.
 
             Resume File Name: {object_key}
-            Resume Content:
-            {file_content[:4000]}  # Truncate to first 4000 characters to prevent token limit overflow
 
             Please return a JSON response with the following keys:
             - "summary": A brief professional summary.
@@ -66,14 +54,38 @@ def lambda_handler(event, context):
             - "strengths": A list of key strengths.
             - "improvements": A list of actionable suggestions for improvement.
             """
-            
+
+            # Handle PDF vs text files: PDFs are passed to Claude as a native
+            # document block (Bedrock/Claude Sonnet 4.5 reads PDFs directly),
+            # so no separate text-extraction library is needed.
+            if object_key.lower().endswith('.pdf'):
+                file_bytes = response['Body'].read()
+                message_content = [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": base64.b64encode(file_bytes).decode('utf-8'),
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": instruction_text,
+                    },
+                ]
+            else:
+                file_content = response['Body'].read().decode('utf-8', errors='ignore')
+                message_content = f"{instruction_text}\n\nResume Content:\n{file_content[:4000]}"
+
+            # 3. Construct the prompt and invoke Amazon Bedrock (Claude Sonnet 4.5)
             payload = {
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 1000,
                 "messages": [
                     {
                         "role": "user",
-                        "content": prompt
+                        "content": message_content
                     }
                 ]
             }
