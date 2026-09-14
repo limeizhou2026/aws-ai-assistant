@@ -67,14 +67,32 @@ export class AiAssistantStack extends cdk.Stack {
     resumeBucket.grantRead(agentLambda); // 仅允许 Lambda 读取 S3
     jobTable.grantWriteData(agentLambda); // 仅允许 Lambda 写入 DynamoDB
 
-    // 8. 赋予 Lambda 调用 Amazon Bedrock 大模型的权限
-    agentLambda.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel'],
-      resources: [ "arn:aws:bedrock:us-east-1:013644998586:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-            "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
-            "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
-            "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"],
-    }));
+    // 1. Permission to invoke the Bedrock model
+    agentLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "bedrock:InvokeModel"
+        ],
+        resources: [
+          "arn:aws:bedrock:us-east-1:013644998586:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+        ]
+      })
+    );
+
+  // 2. Permission for Bedrock to enable the Marketplace subscription
+    agentLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "aws-marketplace:ViewSubscriptions",
+          "aws-marketplace:Subscribe",
+          "aws-marketplace:Unsubscribe"
+        ],
+        resources: ["*"]
+      })
+    );
 
     // 打印输出，方便前端配置
     new cdk.CfnOutput(this, 'BucketNameOutput', { value: resumeBucket.bucketName });
