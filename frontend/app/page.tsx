@@ -1,4 +1,5 @@
 'use client';
+
 import { useState } from 'react';
 
 export default function Home() {
@@ -11,18 +12,18 @@ export default function Home() {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
       setAiResult(null);
-      setStatusMessage(`已选择文件: ${e.target.files[0].name}`);
+      setStatusMessage(`Selected file: ${e.target.files[0].name}`);
     }
   };
 
   const handleUploadAndAnalyze = async () => {
     if (!file) {
-      alert('请先选择一份 PDF 简历！');
+      alert('Please select a PDF resume first!');
       return;
     }
 
     setIsUploading(true);
-    setStatusMessage('1. 正在安全向 AWS 请求预签名上传通道...');
+    setStatusMessage('1. Requesting secure presigned upload URL from AWS...');
 
     try {
       const res = await fetch('/api/get-presigned-url', {
@@ -31,10 +32,10 @@ export default function Home() {
         body: JSON.stringify({ filename: file.name, filetype: file.type }),
       });
       
-      if (!res.ok) throw new Error('无法获取预签名 URL');
+      if (!res.ok) throw new Error('Failed to retrieve presigned URL');
       const { uploadUrl } = await res.json();
 
-      setStatusMessage('2. 通道已建立，正在直接上传简历至 Amazon S3...');
+      setStatusMessage('2. Channel established. Uploading resume directly to Amazon S3...');
 
       const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
@@ -42,19 +43,20 @@ export default function Home() {
         body: file,
       });
 
-      if (!uploadRes.ok) throw new Error('文件上传 S3 失败');
+      if (!uploadRes.ok) throw new Error('Failed to upload file to S3');
 
-      setStatusMessage('3. 上传成功！AWS SQS 已触发 Lambda Agent。正在为您深度审计简历 (预计15-30秒)...');
+      setStatusMessage('3. Upload successful! AWS SQS triggered Lambda Agent. Deep auditing resume (Est. 15-30s)...');
       
+      // Simulated response placeholder (Ready to be wired up with DynamoDB fetching)
       setTimeout(() => {
-        setAiResult(`### 🚀 Claude 3.5 Sonnet 简历审计报告\n\n**【致命缺失技能】**\n1. 缺乏分布式系统经验：简历中虽提及全栈，但未体现高并发场景下的数据一致性处理。\n2. 云原生架构薄弱：未提及 IaC（如 AWS CDK/Terraform）的实际应用。\n\n**【Cover Letter 润色】**\n"Dear Hiring Manager, I am thrilled to express my interest in the Full Stack Intern role. With my hand-on experience in AWS Serverless architecture..."`);
+        setAiResult(`### 🚀 Claude 3.5 Sonnet Resume Audit Report\n\n**[Critical Gaps]**\n1. Distributed Systems: Mentioned full-stack development, but lacked concrete handling of data consistency in high-concurrency scenarios.\n2. Cloud-Native Architecture: Did not highlight hands-on experience with IaC frameworks (e.g., AWS CDK/Terraform).\n\n**[Optimized Cover Letter Hook]**\n"Dear Hiring Manager, I am thrilled to express my interest in the Full Stack position. With my hands-on experience in AWS Serverless architecture..."`);
         setIsUploading(false);
-        setStatusMessage('分析完成！');
+        setStatusMessage('Analysis complete!');
       }, 5000);
 
     } catch (error) {
       console.error(error);
-      setStatusMessage('服务出现问题，请检查 AWS 凭证或本地配置。');
+      setStatusMessage('An error occurred. Please check your AWS credentials or local configuration.');
       setIsUploading(false);
     }
   };
@@ -66,7 +68,7 @@ export default function Home() {
           AWS Agentic Job Assistant
         </h1>
         <p className="mt-2 text-slate-400 text-sm">
-           Enterprise level AWS 异步解耦架构的 AI 简历智能审计智能体
+          Enterprise-grade AWS serverless decoupled architecture for AI-powered resume auditing.
         </p>
       </div>
 
@@ -78,8 +80,8 @@ export default function Home() {
             onChange={handleFileChange}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
-          <p className="text-slate-300 font-medium">点击或将 PDF 简历拖拽到此处</p>
-          <p className="text-slate-500 text-xs mt-1">仅支持标准 PDF 格式文件</p>
+          <p className="text-slate-300 font-medium">Click or drag & drop your PDF resume here</p>
+          <p className="text-slate-500 text-xs mt-1">Standard PDF format files only</p>
         </div>
 
         {statusMessage && (
@@ -97,7 +99,7 @@ export default function Home() {
               : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-indigo-500/20'
           }`}
         >
-          {isUploading ? 'Agent 正在思考中...' : '开始 AI 智能审计'}
+          {isUploading ? 'Agent is thinking...' : 'Start AI Smart Audit'}
         </button>
       </div>
 
@@ -105,7 +107,7 @@ export default function Home() {
         <div className="w-full max-w-2xl mt-8 bg-slate-900 border border-emerald-900/30 rounded-2xl p-8 shadow-2xl">
           <div className="text-emerald-400 font-bold mb-3 flex items-center gap-2">
             <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            AI 分析报告已就绪：
+            AI Analysis Report Ready:
           </div>
           <div className="text-slate-300 whitespace-pre-wrap font-sans leading-relaxed text-sm bg-slate-950 p-4 rounded-xl border border-slate-800">
             {aiResult}

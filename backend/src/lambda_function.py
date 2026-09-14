@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.parse
 import boto3
 from botocore.exceptions import ClientError
 
@@ -25,17 +26,29 @@ def lambda_handler(event, context):
             if 'Records' in body:
                 s3_event = body['Records'][0]
                 bucket_name = s3_event['s3']['bucket']['name']
-                object_key = s3_event['s3']['object']['key']
+                raw_key = s3_event['s3']['object']['key']
             else:
                 # If triggered directly from S3 to SQS
                 bucket_name = body['bucket']['name']
-                object_key = body['object']['key']
+                raw_key = body['object']['key']
+                
+            # FIX: URL-decode the object key to prevent NoSuchKey errors caused by spaces/special characters (%20)
+            object_key = urllib.parse.unquote_plus(raw_key)
                 
             print(f"Processing file: {object_key} from bucket: {bucket_name}")
             
             # 2. Retrieve resume content from S3
             response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
-            file_content = response['Body'].read().decode('utf-8', errors='ignore')
+            
+            # Handle PDF vs Text file content gracefully
+            if object_key.lower().endswith('.pdf'):
+                # For PDF files, read binary and handle parsing (or fallback message if pypdf is needed)
+                # To ensure robustness, we can read bytes. If you use pypdf, you can parse it here.
+                file_bytes = response['Body'].read()
+                # Simple fallback text representation for binary if pypdf isn't bundled yet
+                file_content = f"[Binary PDF File: {object_key}, Size: {len(file_bytes)} bytes]"
+            else:
+                file_content = response['Body'].read().decode('utf-8', errors='ignore')
             
             # 3. Construct the prompt and invoke Amazon Bedrock (Claude 3.5 Sonnet)
             prompt = f"""
@@ -43,6 +56,7 @@ def lambda_handler(event, context):
             Please analyze the following resume content, evaluate its strengths, weaknesses, 
             and provide a score out of 100 with actionable feedback.
 
+            Resume File Name: {object_key}
             Resume Content:
             {file_content[:4000]}  # Truncate to first 4000 characters to prevent token limit overflow
 
@@ -66,7 +80,7 @@ def lambda_handler(event, context):
             
             # Invoke Claude 3.5 Sonnet on Amazon Bedrock
             bedrock_response = bedrock_runtime.invoke_model(
-                 modelId="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                 modelId="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
                  contentType="application/json",
                  accept="application/json",
                  body=json.dumps(payload)
